@@ -19,6 +19,14 @@ keypoint_visible_rate: 1.0
 obs_as_cond: True
 pred_action_steps_only: False
 
+lightdp:
+  enable_pruning: false
+  prune_epoch_start: 20
+  pruning_block_size: 4
+  pruning_keep_ratio: 0.5
+  pruning_temperature: 0.5
+  energy_threshold: 0.9
+
 policy:
   _target_: diffusion_policy.policy.diffusion_transformer_lowdim_policy.DiffusionTransformerLowdimPolicy
 
@@ -40,6 +48,11 @@ policy:
     time_as_cond: True # if false, use BERT like encoder only arch, time as input
     obs_as_cond: ${obs_as_cond}
     n_cond_layers: 0 # >0: use transformer encoder for cond, otherwise use MLP
+
+    enable_layer_pruning: ${lightdp.enable_pruning}
+    pruning_block_size: ${lightdp.pruning_block_size}
+    pruning_keep_ratio: ${lightdp.pruning_keep_ratio}
+    pruning_temperature: ${lightdp.pruning_temperature}
   
   noise_scheduler:
     _target_: diffusers.schedulers.scheduling_ddpm.DDPMScheduler

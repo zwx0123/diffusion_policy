@@ -118,6 +118,7 @@ class AsyncVectorEnv(VectorEnv):
                 _obs_buffer = create_shared_memory(
                     self.single_observation_space, n=self.num_envs, ctx=ctx
                 )
+                self._obs_buffer = _obs_buffer
                 self.observations = read_from_shared_memory(
                     _obs_buffer, self.single_observation_space, n=self.num_envs
                 )
@@ -131,6 +132,7 @@ class AsyncVectorEnv(VectorEnv):
                     "if you use custom observation spaces."
                 )
         else:
+            self._obs_buffer = None
             _obs_buffer = None
             self.observations = create_empty_array(
                 self.single_observation_space, n=self.num_envs, fn=np.zeros
@@ -304,7 +306,28 @@ class AsyncVectorEnv(VectorEnv):
             infos,
         )
 
-    def close_extras(self, timeout=None, terminate=False):
+    def close(self, timeout=None, terminate=True):
+        """
+        Close all environments and clean up resources.
+        
+        Parameters
+        ----------
+        timeout : int or float, optional
+            Number of seconds before the call to `close` times out. If `None`,
+            the call to `close` never times out. If the call to `close` times
+            out, then all processes are terminated.
+        terminate : bool (default: `True`)
+            If `True`, then the `close` operation is forced and all processes
+            are terminated.
+        """
+        self.close_extras(timeout=timeout, terminate=terminate)
+        self.closed = True
+        self.processes = []
+        self.parent_pipes = []
+        self.observations = None
+        self._obs_buffer = None
+
+    def close_extras(self, timeout=None, terminate=True):
         """
         Parameters
         ----------
@@ -312,7 +335,7 @@ class AsyncVectorEnv(VectorEnv):
             Number of seconds before the call to `close` times out. If `None`,
             the call to `close` never times out. If the call to `close` times
             out, then all processes are terminated.
-        terminate : bool (default: `False`)
+        terminate : bool (default: `True`)
             If `True`, then the `close` operation is forced and all processes
             are terminated.
         """
@@ -332,19 +355,39 @@ class AsyncVectorEnv(VectorEnv):
             for process in self.processes:
                 if process.is_alive():
                     process.terminate()
+            for process in self.processes:
+                process.join(timeout=5)
         else:
             for pipe in self.parent_pipes:
                 if (pipe is not None) and (not pipe.closed):
-                    pipe.send(("close", None))
+                    try:
+                        pipe.send(("close", None))
+                    except:
+                        pass
             for pipe in self.parent_pipes:
                 if (pipe is not None) and (not pipe.closed):
-                    pipe.recv()
+                    try:
+                        pipe.recv()
+                    except:
+                        pass
 
         for pipe in self.parent_pipes:
             if pipe is not None:
-                pipe.close()
+                try:
+                    pipe.close()
+                except:
+                    pass
         for process in self.processes:
-            process.join()
+            try:
+                process.join(timeout=5)
+            except:
+                pass
+            if process.is_alive():
+                try:
+                    process.terminate()
+                    process.join(timeout=2)
+                except:
+                    pass
 
     def _poll(self, timeout=None):
         self._assert_is_running()
